@@ -9,6 +9,7 @@ from torch.utils.data import Dataset
 import pandas as pd
 from augmentation import AllAugmentationTransform
 import glob
+import random
 
 
 def read_video(name, frame_shape):
@@ -61,22 +62,29 @@ class FramesDataset(Dataset):
     """
 
     def __init__(self, root_dir, frame_shape=(256, 256, 3), id_sampling=False, is_train=True,
-                 random_seed=0, pairs_list=None, augmentation_params=None):
+                 random_seed=0, tha_dataset=False, pairs_list=None, augmentation_params=None):
         self.root_dir = root_dir
         self.videos = os.listdir(root_dir)
         self.frame_shape = tuple(frame_shape)
         self.pairs_list = pairs_list
         self.id_sampling = id_sampling
+        self.tha_dataset = tha_dataset
         if os.path.exists(os.path.join(root_dir, 'train')):
             assert os.path.exists(os.path.join(root_dir, 'test'))
             print("Use predefined train-test split.")
-            if id_sampling:
-                train_videos = {os.path.basename(video).split('#')[0] for video in
-                                os.listdir(os.path.join(root_dir, 'train'))}
-                train_videos = list(train_videos)
-            else:
+            if tha_dataset:
                 train_videos = os.listdir(os.path.join(root_dir, 'train'))
-            test_videos = os.listdir(os.path.join(root_dir, 'test'))
+                test_videos = os.listdir(os.path.join(root_dir, 'test'))
+                train_videos = [x for x in train_videos if os.path.isdir(os.path.join(os.path.join(root_dir, 'train'), x))]
+                test_videos = [x for x in test_videos if os.path.isdir(os.path.join(os.path.join(root_dir, 'test'), x))]
+            else:   
+                if id_sampling:
+                    train_videos = {os.path.basename(video).split('#')[0] for video in
+                                    os.listdir(os.path.join(root_dir, 'train'))}
+                    train_videos = list(train_videos)
+                else:
+                    train_videos = os.listdir(os.path.join(root_dir, 'train'))
+                test_videos = os.listdir(os.path.join(root_dir, 'test'))
             self.root_dir = os.path.join(self.root_dir, 'train' if is_train else 'test')
         else:
             print("Use random train-test split.")
@@ -108,10 +116,19 @@ class FramesDataset(Dataset):
         video_name = os.path.basename(path)
 
         if self.is_train and os.path.isdir(path):
-            frames = os.listdir(path)
-            num_frames = len(frames)
-            frame_idx = np.sort(np.random.choice(num_frames, replace=True, size=2))
-            video_array = [img_as_float32(io.imread(os.path.join(path, frames[idx]))) for idx in frame_idx]
+            if self.tha_dataset:
+                files = os.listdir(path)
+                png_files = [x for x in files if x[-9:] == "_rest.png"]
+                count = len(png_files)
+                idx = random.randrange(count)
+                rest_file = os.path.join(path, ("%08d_rest.png" % idx))
+                posed_file = os.path.join(path, ("%08d_posed.png" % idx))
+                video_array = [img_as_float32(io.imread(rest_file))[:,:,:3], img_as_float32(io.imread(posed_file))[:,:,:3]]
+            else:
+                frames = os.listdir(path)
+                num_frames = len(frames)
+                frame_idx = np.sort(np.random.choice(num_frames, replace=True, size=2))
+                video_array = [img_as_float32(io.imread(os.path.join(path, frames[idx]))) for idx in frame_idx]
         else:
             video_array = read_video(path, frame_shape=self.frame_shape)
             num_frames = len(video_array)

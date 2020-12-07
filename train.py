@@ -12,6 +12,8 @@ from sync_batchnorm import DataParallelWithCallback
 
 from frames_dataset import DatasetRepeater
 
+import time
+
 
 def train(config, generator, discriminator, kp_detector, checkpoint, log_dir, dataset, device_ids):
     train_params = config['train_params']
@@ -45,8 +47,10 @@ def train(config, generator, discriminator, kp_detector, checkpoint, log_dir, da
         generator_full = DataParallelWithCallback(generator_full, device_ids=device_ids)
         discriminator_full = DataParallelWithCallback(discriminator_full, device_ids=device_ids)
 
+    last_time = time.time()
     with Logger(log_dir=log_dir, visualizer_params=config['visualizer_params'], checkpoint_freq=train_params['checkpoint_freq']) as logger:
         for epoch in trange(start_epoch, train_params['num_epochs']):
+            image_pair_count = 0
             for x in dataloader:
                 losses_generator, generated = generator_full(x)
 
@@ -74,6 +78,13 @@ def train(config, generator, discriminator, kp_detector, checkpoint, log_dir, da
                 losses_generator.update(losses_discriminator)
                 losses = {key: value.mean().detach().data.cpu().numpy() for key, value in losses_generator.items()}
                 logger.log_iter(losses=losses)
+
+                image_pair_count += train_params['batch_size']
+
+                now = time.time()
+                if now - last_time >= 10:
+                    print("Processed %d image pairs ..." % image_pair_count)
+                    last_time = now
 
             scheduler_generator.step()
             scheduler_discriminator.step()
